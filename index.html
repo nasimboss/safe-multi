@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Safe Multi Football</title>
+<style>
+:root{--bg:#06101e;--card:#0b1a2b;--line:#1c3956;--text:#edf5ff;--muted:#91a6bd;--green:#2bd47e;--yellow:#ffd166;--red:#ff7078}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,system-ui,sans-serif}
+.wrap{max-width:1050px;margin:auto;padding:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px;margin-bottom:12px}
+h1{font-size:27px;margin:0 0 4px}.muted{color:var(--muted)}.small{font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:14px}.field{background:#081525;border:1px solid var(--line);border-radius:13px;padding:10px}.field label{display:block;color:var(--muted);font-size:13px;margin-bottom:6px}
+input,select{width:100%;background:#06101e;color:#fff;border:1px solid #345474;border-radius:9px;padding:11px;font-size:15px;outline:none}
+.mainbtn{width:100%;margin-top:11px;border:0;border-radius:11px;background:var(--green);color:#04150c;font-weight:900;font-size:16px;padding:13px}
+.tabs{display:flex;gap:7px;overflow:auto;padding:2px 0 11px}.tab{white-space:nowrap;background:#091728;color:#b9cadb;border:1px solid #294764;border-radius:999px;padding:10px 14px}.tab.active{background:#143c31;color:#62eea4;border-color:var(--green)}
+.match{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin:9px 0}.top{display:flex;justify-content:space-between;gap:12px}.league{font-size:12px;color:var(--muted)}.teams{font-size:17px;font-weight:800;margin-top:4px}.time{font-weight:800}.score{font-size:20px;font-weight:900}.live{color:#ff7078}
+.probs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}.prob{padding:8px;border-radius:9px;background:#0d2237;text-align:center;font-size:12px}.prob strong{display:block;font-size:16px;margin-top:2px}.best{outline:1px solid var(--green);background:#123528}
+.pickrow{border-top:1px solid var(--line);margin-top:10px;padding-top:9px;display:flex;justify-content:space-between;gap:10px}.pick{color:var(--yellow);font-weight:800}.odds{color:#63eda4;font-size:18px;font-weight:900}
+.multi{border:1px solid var(--green);border-radius:17px;padding:14px;background:#091a29}.multihead{display:flex;justify-content:space-between;gap:10px}.total{font-size:30px;color:#63eda4;font-weight:900}.mrow{padding:11px 0;border-bottom:1px solid var(--line);display:grid;grid-template-columns:1fr auto;gap:10px}.mrow b{white-space:nowrap}.copy{background:#0d2237;border:1px solid #345474;color:#fff;border-radius:8px;padding:8px 12px;margin-top:10px}
+.ok{color:#63eda4}.err{color:#ff8e95}.warn{color:#ffd166}
+@media(max-width:720px){.grid{grid-template-columns:1fr 1fr}.teams{font-size:16px}.mrow{grid-template-columns:1fr}.total{font-size:25px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="card">
+<h1>⚽ Safe Multi Football</h1>
+<div class="muted">🔴 LIVE + Upcoming 6/12/24/48 Hours • 🇧🇩 বাংলাদেশ সময়</div>
+<div class="grid">
+<div class="field"><label>Multi Matches</label><select id="count"><option>3</option><option>5</option><option selected>10</option><option>15</option><option>20</option></select></div>
+<div class="field"><label>Minimum Odds</label><input id="minOdds" type="number" step="0.01" value="1.20"></div>
+<div class="field"><label>Maximum Odds</label><input id="maxOdds" type="number" step="0.01" value="2.00"></div>
+<div class="field"><label>Market</label><select id="market"><option value="all">সব Market</option><option value="result">Win / Draw</option><option value="over">Over / Under</option><option value="btts">BTTS</option><option value="dc">Double Chance</option><option value="dnb">DNB</option></select></div>
+</div>
+<button class="mainbtn" onclick="generateMulti()">🎯 GENERATE SAFE MULTI</button>
+<div id="apiStatus" class="small muted" style="margin-top:9px">Server API সংযোগ তৈরি হচ্ছে...</div>
+</div>
+<div class="tabs">
+<button class="tab active" data-tab="all">সব ম্যাচ</button><button class="tab" data-tab="live">🔴 LIVE</button>
+<button class="tab" data-tab="6">6 Hours</button><button class="tab" data-tab="12">12 Hours</button>
+<button class="tab" data-tab="24">24 Hours</button><button class="tab" data-tab="48">48 Hours</button>
+</div>
+<div id="matches"></div><div id="multi"></div>
+<div class="card small muted">⚠️ এটি statistical prediction। কোনো pick বা multi 100% guaranteed নয়। API-তে odds/prediction না থাকলে সেই pick বানানো হবে না।</div>
+</div>
+<script>
+let DATA={live:[],upcoming:[]},activeTab="all";
+const arr=v=>Array.isArray(v)?v:(v?.data||[]);
+const num=v=>{const n=Number(v);return Number.isFinite(n)?n:null};
+const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+const dh=iso=>new Intl.DateTimeFormat("bn-BD",{timeZone:"Asia/Dhaka",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",hour12:true}).format(new Date(iso));
+const hrs=iso=>(new Date(iso)-Date.now())/3600000;
+function teams(f){const p=arr(f.participants),h=p.find(x=>x.meta?.location==="home")||p[0],a=p.find(x=>x.meta?.location==="away")||p[1];return{home:h?.name||"Home",away:a?.name||"Away"}}
+function league(f){return f.league?.name||f.league?.data?.name||"Unknown League"}
+function country(f){return f.league?.country?.name||f.country?.name||""}
+function score(f){const s=arr(f.scores),h=teams(f);let hg=null,ag=null;for(const x of s){const id=x.participant_id;const g=x.score?.goals;if(g==null)continue;const p=arr(f.participants).find(z=>z.id===id);if(p?.id===arr(f.participants)[0]?.id)hg=g;else if(hg===null)hg=g;else if(ag===null)ag=g}return `${hg??0} - ${ag??0}`}
+function probs(f){for(const p of arr(f.predictions)){const k=(p.type?.developer_name||p.type?.name||"").toLowerCase(),v=p.predictions||p.prediction||p.data||{};if(k.includes("fulltime")||k.includes("result")||k.includes("match winner"))return{home:num(v.home),draw:num(v.draw),away:num(v.away)}}return{}}
+function bestLive(f){const t=teams(f),p=probs(f);return[{key:"home",p:p.home,label:t.home+" Win"},{key:"draw",p:p.draw,label:"Draw"},{key:"away",p:p.away,label:t.away+" Win"}].filter(x=>x.p!=null).sort((a,b)=>b.p-a.p)[0]||null}
+function rawOdds(f){return arr(f.odds||f.prematchOdds||f.prematch_odds||f.betting_odds)}
+function mt(o){return String(o.market_description??o.market?.name??o.market?.description??o.market_name??o.name??o.label??"").toLowerCase()}
+function st(o){return String(o.label??o.name??o.selection??o.outcome??o.value_label??"").toLowerCase()}
+function ov(o){return num(o.value??o.odds??o.price??o.decimal)}
+function parse(o,h,a){const m=mt(o),s=st(o),v=ov(o);if(v==null||v<=1)return null;
+if(m.includes("match winner")||m.includes("fulltime result")||m==="1x2"||m.includes("1x2")){if(s==="home"||s==="1"||s.includes(h.toLowerCase()))return{kind:"result",label:h+" Win",odds:v};if(s==="away"||s==="2"||s.includes(a.toLowerCase()))return{kind:"result",label:a+" Win",odds:v};if(s==="draw"||s==="x")return{kind:"result",label:"Draw",odds:v}}
+if(m.includes("double chance"))return{kind:"dc",label:"Double Chance: "+(o.label||o.name||o.selection||""),odds:v};
+if(m.includes("both teams to score")||m.includes("btts"))return{kind:"btts",label:"BTTS "+(o.label||o.name||o.selection||""),odds:v};
+if(m.includes("over/under")||m.includes("goals over")||m.includes("total goals"))return{kind:"over",label:(o.label||o.name||o.selection||"Over/Under"),odds:v};
+if(m.includes("draw no bet")||m.includes("dnb"))return{kind:"dnb",label:"DNB "+(o.label||o.name||o.selection||""),odds:v};return null}
+function pred(f,c){const target=c.label.toLowerCase(),t=teams(f);for(const p of arr(f.predictions)){const k=(p.type?.developer_name||p.type?.name||"").toLowerCase(),v=p.predictions||p.prediction||p.data||{};
+if(c.kind==="result"&&(k.includes("fulltime")||k.includes("result")||k.includes("match winner"))){if(target==="draw"&&v.draw!=null)return num(v.draw);if(target.includes(t.home.toLowerCase())&&v.home!=null)return num(v.home);if(target.includes(t.away.toLowerCase())&&v.away!=null)return num(v.away)}
+if(c.kind==="btts"&&k.includes("btts")){if(/yes/i.test(c.label)&&v.yes!=null)return num(v.yes);if(/no/i.test(c.label)&&v.no!=null)return num(v.no)}
+if(c.kind==="over"&&(k.includes("over")||k.includes("under"))){if(/over/i.test(c.label)&&v.over!=null)return num(v.over);if(/under/i.test(c.label)&&v.under!=null)return num(v.under)}
+if(c.kind==="dc"&&k.includes("double")){if(target.includes("1x")&&v["1x"]!=null)return num(v["1x"]);if(target.includes("x2")&&v["x2"]!=null)return num(v["x2"]);if(target.includes("12")&&v["12"]!=null)return num(v["12"])}}return null}
+function bestPick(f){const min=+document.getElementById("minOdds").value||1.2,max=+document.getElementById("maxOdds").value||2,filter=document.getElementById("market").value,t=teams(f);
+const cs=rawOdds(f).map(o=>parse(o,t.home,t.away)).filter(Boolean).filter(c=>c.odds>=min&&c.odds<=max&&(filter==="all"||c.kind===filter));
+return cs.map(c=>{const p=pred(f,c);if(p==null)return null;return{...c,probability:p,risk:100-p,score:p-(c.odds-1)*12}}).filter(Boolean).sort((a,b)=>b.score-a.score)[0]||null}
+async function get(url){const r=await fetch(url,{cache:"no-store"});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error||j.message||("HTTP "+r.status));return j.data||[]}
+function dateYMD(d){return d.toISOString().slice(0,10)}
+async function load(){
+const s=document.getElementById("apiStatus");s.textContent="⏳ LIVE + upcoming data loading...";
+try{
+const live=await get("/api/football?type=live");
+DATA.live=live.map(f=>{const t=teams(f),p=probs(f);return{id:f.id,live:true,home:t.home,away:t.away,league:league(f),country:country(f),score:score(f),starting_at:f.starting_at,state:f.state?.name||f.state?.developer_name||"",probs:p,best:bestLive(f)}})
+const start=new Date(),end=new Date(start.getTime()+48*3600000),dates=[dateYMD(start),dateYMD(new Date(start.getTime()+86400000)),dateYMD(new Date(start.getTime()+2*86400000))];
+const lists=await Promise.all([...new Set(dates)].map(d=>get("/api/football?type=fixtures&date="+d)));const seen=new Set();DATA.upcoming=[];
+for(const list of lists.flat()){if(seen.has(list.id))continue;seen.add(list.id);const tm=new Date(list.starting_at);if(!list.starting_at||tm<=start||tm>end)continue;const t=teams(list);DATA.upcoming.push({id:list.id,home:t.home,away:t.away,league:league(list),country:country(list),starting_at:list.starting_at,pick:bestPick(list)})}
+DATA.upcoming.sort((a,b)=>new Date(a.starting_at)-new Date(b.starting_at));s.innerHTML=`<span class="ok">✓ LIVE ${DATA.live.length} • Upcoming ${DATA.upcoming.length}</span> • Auto refresh 30s`;render()
+}catch(e){s.innerHTML=`<span class="err">❌ ${esc(e.message)}</span>`;document.getElementById("matches").innerHTML=`<div class="card err">API পাওয়া যায়নি। Vercel-এ api/football.js এবং SPORTMONKS_TOKEN ঠিক আছে কিনা দেখুন।</div>`}}
+function visible(){if(activeTab==="live")return DATA.live;if(activeTab==="all")return[...DATA.live,...DATA.upcoming].sort((a,b)=>a.live&&!b.live?-1:!a.live&&b.live?1:new Date(a.starting_at)-new Date(b.starting_at));return DATA.upcoming.filter(x=>hrs(x.starting_at)<=+activeTab)}
+function render(){const l=visible(),box=document.getElementById("matches");if(!l.length){box.innerHTML='<div class="card muted">এই tab-এ কোনো ম্যাচ পাওয়া যায়নি।</div>';return}
+box.innerHTML=l.map(m=>m.live?`<div class="match"><div class="top"><div><div class="league">${esc(m.country)} • ${esc(m.league)}</div><div class="teams">${esc(m.home)} <span class="muted">vs</span> ${esc(m.away)}</div></div><div style="text-align:right"><div class="score live">${esc(m.score)}</div><div class="small live">🔴 LIVE</div></div></div><div class="probs"><div class="prob ${m.best?.key==="home"?"best":""}">🏠 ${esc(m.home)} Win<strong>${m.probs.home!=null?m.probs.home.toFixed(1)+"%":"-"}</strong></div><div class="prob ${m.best?.key==="draw"?"best":""}">🤝 Draw<strong>${m.probs.draw!=null?m.probs.draw.toFixed(1)+"%":"-"}</strong></div><div class="prob ${m.best?.key==="away"?"best":""}">✈️ ${esc(m.away)} Win<strong>${m.probs.away!=null?m.probs.away.toFixed(1)+"%":"-"}</strong></div></div><div class="pickrow"><span class="pick">🎯 Prediction: ${m.best?esc(m.best.label):"Prediction unavailable"}</span><span class="muted">${esc(m.state||"LIVE")}</span></div></div>`:`<div class="match"><div class="top"><div><div class="league">${esc(m.country)} • ${esc(m.league)}</div><div class="teams">${esc(m.home)} <span class="muted">vs</span> ${esc(m.away)}</div></div><div class="time">${esc(dh(m.starting_at))}</div></div><div class="pickrow"><span class="pick">🎯 ${m.pick?esc(m.pick.label):"No qualifying pick"}</span><span class="odds">${m.pick?m.pick.odds.toFixed(2)+"x":"-"}</span></div><div class="small muted" style="margin-top:7px">${m.pick?`Model ${m.pick.probability.toFixed(1)}% • Risk ${m.pick.risk.toFixed(1)}%`:"এই match-এর odds/prediction range-এর মধ্যে পাওয়া যায়নি"}</div></div>`).join("")}
+function generateMulti(){const n=+document.getElementById("count").value,min=+document.getElementById("minOdds").value||1.2,max=+document.getElementById("maxOdds").value||2,q=DATA.upcoming.filter(x=>x.pick&&x.pick.odds>=min&&x.pick.odds<=max).sort((a,b)=>b.pick.probability-a.pick.probability).slice(0,n),box=document.getElementById("multi");if(!q.length){box.innerHTML='<div class="multi err">এই odds range-এ qualifying match পাওয়া যায়নি।</div>';return}let total=q.reduce((a,x)=>a*x.pick.odds,1);box.innerHTML=`<div class="multi"><div class="multihead"><div><b>🎯 SAFE MULTI</b><div class="muted">${q.length}/${n} qualifying match</div></div><div class="total">${total.toFixed(2)}x</div></div>${q.map((x,i)=>`<div class="mrow"><span>${i+1}. ${esc(x.home)} vs ${esc(x.away)}<br><span class="muted">${esc(x.country)} • ${esc(x.league)} • ${esc(dh(x.starting_at))}</span></span><b>${esc(x.pick.label)} • ${x.pick.odds.toFixed(2)}x</b></div>`).join("")}<button class="copy" onclick="copyMulti()">📋 Copy Multi</button></div>`}
+function copyMulti(){navigator.clipboard?.writeText([...document.querySelectorAll(".mrow")].map(x=>x.innerText.replace(/\n/g," | ")).join("\n"))}
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));b.classList.add("active");activeTab=b.dataset.tab;render()});
+load();setInterval(load,30000);
+</script>
+</body></html>
