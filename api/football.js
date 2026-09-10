@@ -1,4 +1,4 @@
-const TOKEN = process.env.SPORTMONKS_TOKEN || "YSD376FH1hFycCiwMUlJWjSpxKTsaLHCcmZmMUgzaJRTPMUkrmWWGXKLj7Tk";
+const TOKEN = process.env.SPORTMONKS_TOKEN || "z7bHdbOhPxWdVSUnJpmMbpnnwZ0lzEGVFmaeqhN2suCXn9NUgZlHcJUuoMqw";
 const BASE = "https://api.sportmonks.com/v3/football";
 
 export default async function handler(req,res){
