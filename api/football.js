@@ -1,27 +1,5 @@
-const TOKEN = process.env.SPORTMONKS_TOKEN || "z7bHdbOhPxWdVSUnJpmMbpnnwZ0lzEGVFmaeqhN2suCXn9NUgZlHcJUuoMqw";
-const BASE = "https://api.sportmonks.com/v3/football";
-
-export default async function handler(req,res){
-  try{
-    const type=String(req.query.type||"");
-    let path="", include="";
-    if(type==="live"){
-      path="/livescores/inplay";
-      include="participants;league;state;scores;events;predictions.type";
-    }else if(type==="fixtures"){
-      const date=String(req.query.date||"");
-      if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({error:"Valid date is required"});
-      path="/fixtures/date/"+date;
-      include="participants;league;country;state;scores;predictions.type;odds";
-    }else return res.status(400).json({error:"Unknown API type"});
-    const url=new URL(BASE+path);
-    url.searchParams.set("include",include);
-    const upstream=await fetch(url,{headers:{Authorization:`Bearer ${TOKEN}`}});
-    const text=await upstream.text();
-    let body; try{body=JSON.parse(text)}catch{body={error:text||"Invalid upstream response"}}
-    res.setHeader("Cache-Control","s-maxage=20, stale-while-revalidate=40");
-    return res.status(upstream.status).json(body);
-  }catch(e){
-    return res.status(502).json({error:"Sportmonks upstream error: "+e.message});
-  }
-}
+const BASE="https://www.sofascore.com/api/v1";
+const hours=t=>({6:6,12:12,24:24,48:48}[t]||0);
+async function get(url){const r=await fetch(url,{headers:{"User-Agent":"Mozilla/5.0"}});if(!r.ok)throw Object.assign(new Error("SofaScore HTTP "+r.status),{status:r.status});return r.json()}
+function norm(events,status){return(events||[]).filter(e=>e.homeTeam&&e.awayTeam).map(e=>{let h=Number(e.homeTeam.avgRating||0),a=Number(e.awayTeam.avgRating||0),pick=h>a*1.12?"Home Win / DNB":a>h*1.12?"Away Win / DNB":"Over 1.5 Goals";let odds=pick==="Over 1.5 Goals"?1.25:1.45;let safe=Math.max(55,Math.min(92,70+Math.round(Math.abs(h-a)/(Math.max(h,a)||1)*30)));return{id:e.id,status,startTimestamp:e.startTimestamp,home:e.homeTeam,away:e.awayTeam,league:e.tournament?.uniqueTournament?.name||e.tournament?.name||"",country:e.tournament?.category?.country?.name||e.tournament?.category?.name||"",homeScore:e.homeScore?.current??0,awayScore:e.awayScore?.current??0,pick,odds,safeScore:safe}})}
+export default async function handler(req,res){try{let type=String(req.query?.type||"live"),matches=[];if(type==="live"){let d=await get(BASE+"/sport/football/events/live");matches=norm(d.events,"live")}else{let hrs=hours(type),now=Math.floor(Date.now()/1000),days=Math.max(1,Math.ceil(hrs/24)+1);for(let i=0;i<days;i++){let d=new Date((now+i*86400)*1000).toISOString().slice(0,10);let x=await get(BASE+"/sport/football/scheduled-events/"+d);matches.push(...norm(x.events,"upcoming"))}matches=matches.filter(m=>m.startTimestamp>=now&&m.startTimestamp<=now+hrs*3600).sort((a,b)=>a.startTimestamp-b.startTimestamp)}res.setHeader("Cache-Control","s-maxage=30, stale-while-revalidate=60");res.status(200).json({source:"SofaScore",type,matches})}catch(e){res.status(e.status||500).json({error:"SofaScore API error: "+e.message})}}
